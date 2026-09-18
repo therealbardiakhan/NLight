@@ -1,14 +1,15 @@
-# Nothing Light v1.4
+# Nothing Light v1.5
 
 Minimal MR Star / GATT-DEMO BLE controller.
 
-### v1.4
-- Disconnected/connecting states now use a centered minimal UI.
-- Full controller UI appears only after connection.
-- Android 15/16 edge-to-edge safe.
-- Larger, readable controls with persistent UI scale.
-- Added effects menu with Solid, Breath, Rainbow, Color Cycle, Flash, Fade, Wave and Random.
-- Added 2000K–6500K color-temperature control.
-- Presets, brightness, reconnect and UI scaling retained.
+### v1.5 — real MR Star effects
+The previous effect implementation used guessed packet contents. v1.5 replaces it with the actual MR Star protocol from the open-source `mr-star-ble` implementation:
 
-Note: effect commands use the MR Star BLE command interface; behavior depends on the firmware in the specific controller.
+- Effect command: `BC 06 02 EFFECT_HI EFFECT_LO 55`
+- Speed command: `BC 08 01 SPEED 55`
+- Uses real MR Star effect IDs rather than UI indexes.
+- Includes 26 documented MR Star effects.
+- Retains the centered connection UI, Nothing-style controller, UI scaling, presets, brightness and color-temperature control.
+
+Effect IDs are based on the `Effect` enum in:
+https://github.com/mishamyrt/mr-star-ble
