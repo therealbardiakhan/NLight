@@ -30,6 +30,16 @@ public class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Color.BLACK);
         view = new MainView(this);
         setContentView(view);
+        // Android 15+ can draw edge-to-edge. Keep the app controls below the status bar
+        // and above the navigation/gesture area.
+        view.setOnApplyWindowInsetsListener((v, insets) -> {
+            android.graphics.Insets bars = insets.getInsets(
+                android.view.WindowInsets.Type.statusBars() |
+                android.view.WindowInsets.Type.navigationBars());
+            v.setPadding(v.getPaddingLeft(), bars.top, v.getPaddingRight(), bars.bottom);
+            return insets;
+        });
+        view.requestApplyInsets();
         BluetoothManager bm = (BluetoothManager)getSystemService(BLUETOOTH_SERVICE);
         adapter = bm.getAdapter();
         if (Build.VERSION.SDK_INT >= 31)
@@ -154,73 +164,236 @@ public class MainActivity extends Activity {
     @Override protected void onDestroy(){ try{if(gatt!=null)gatt.close();}catch(Exception ignored){} super.onDestroy(); }
 
     class MainView extends View {
-        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
-        float den,cx,cy,radius;
-        MainView(Context c){ super(c); den=getResources().getDisplayMetrics().density; setBackgroundColor(Color.BLACK); }
-        float dp(float x){return x*den;}
-        void txt(Canvas c,String s,float x,float y,float sz,int col){
-            p.setStyle(Paint.Style.FILL); p.setTypeface(Typeface.create("monospace",Typeface.NORMAL));
-            p.setTextSize(dp(sz)); p.setColor(col); c.drawText(s,x,y,p);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float den, cx, cy, radius;
+        int activePreset = -1;
+
+        final int[] PRESETS = {
+            Color.WHITE, Color.RED, Color.rgb(255, 128, 0), Color.YELLOW,
+            Color.GREEN, Color.CYAN, Color.BLUE, Color.MAGENTA
+        };
+
+        MainView(Context c) {
+            super(c);
+            den = getResources().getDisplayMetrics().density;
+            setBackgroundColor(Color.BLACK);
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setStrokeJoin(Paint.Join.ROUND);
         }
-        @Override protected void onDraw(Canvas c){
-            super.onDraw(c); float w=getWidth(),h=getHeight();
-            float top=dp(34); cx=w/2f; cy=top+dp(245); radius=Math.min(dp(122),w*.37f);
-            txt(c,"NOTHING LIGHT",dp(22),top,17,Color.WHITE);
-            txt(c,"GATT—DEMO",dp(22),top+dp(28),11,Color.GRAY);
-            p.setColor(state.equals("CONNECTED")?Color.WHITE:(state.equals("CONNECTING")||state.equals("SCANNING")?Color.GRAY:Color.DKGRAY));
-            c.drawCircle(w-dp(27),top-dp(5),dp(4),p); txt(c,state,w-dp(125),top,9,Color.GRAY);
+
+        float dp(float x) { return x * den; }
+
+        void txt(Canvas c, String s, float x, float y, float sz, int col) {
+            p.setStyle(Paint.Style.FILL);
+            p.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
+            p.setTextSize(dp(sz));
+            p.setColor(col);
+            c.drawText(s, x, y, p);
+        }
+
+        @Override protected void onDraw(Canvas c) {
+            super.onDraw(c);
+            float w = getWidth(), h = getHeight();
+
+            // The View's top padding is the status-bar inset. All content is therefore
+            // measured from below the phone's status bar.
+            float top = dp(34);
+            float side = dp(24);
+            cx = w / 2f;
+            cy = top + dp(210);
+            radius = Math.min(dp(122), (w - dp(64)) * 0.37f);
+
+            txt(c, "NOTHING LIGHT", side, top, 17, Color.WHITE);
+            txt(c, "GATT—DEMO", side, top + dp(28), 11, Color.GRAY);
+
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(state.equals("CONNECTED") ? Color.WHITE :
+                    state.equals("CONNECTING") || state.equals("SCANNING") ?
+                    Color.GRAY : Color.DKGRAY);
+            c.drawCircle(w - side, top - dp(5), dp(4), p);
+            txt(c, state, w - side - dp(100), top, 9, Color.GRAY);
+
             drawWheel(c);
-            float labelY=cy+radius+dp(45);
-            txt(c,"COLOR",dp(22),labelY,10,Color.GRAY);
-            txt(c,String.format(Locale.US,"#%06X",rgb&0xFFFFFF),dp(22),labelY+dp(22),14,Color.WHITE);
-            float sy=labelY+dp(75); txt(c,"BRIGHTNESS",dp(22),sy,10,Color.GRAY);
-            drawSlider(c,dp(22),sy+dp(25),w-dp(22),brightness/100f);
-            txt(c,brightness+"%",dp(22),sy+dp(58),13,Color.WHITE);
-            float bottom=h-dp(28); txt(c,powered?"ON":"OFF",dp(22),bottom,11,Color.WHITE);
-            drawPower(c,w-dp(32),bottom-dp(5),powered);
-            p.setColor(Color.rgb(35,35,35)); p.setStrokeWidth(dp(1));
-            c.drawLine(dp(22),bottom+dp(11),w-dp(22),bottom+dp(11),p);
+
+            // Preset colors directly beneath the picker.
+            float presetY = cy + radius + dp(34);
+            drawPresets(c, presetY);
+
+            float labelY = presetY + dp(46);
+            txt(c, "COLOR", side, labelY, 10, Color.GRAY);
+            txt(c, String.format(Locale.US, "#%06X", rgb & 0xFFFFFF),
+                    side, labelY + dp(22), 14, Color.WHITE);
+
+            float sy = labelY + dp(68);
+            txt(c, "BRIGHTNESS", side, sy, 10, Color.GRAY);
+            float sliderLeft = side;
+            float sliderRight = w - side;
+            float sliderY = sy + dp(25);
+            drawSlider(c, sliderLeft, sliderY, sliderRight, brightness / 100f);
+            txt(c, brightness + "%", side, sy + dp(58), 13, Color.WHITE);
+
+            float bottom = h - dp(30);
+            txt(c, powered ? "ON" : "OFF", side, bottom, 11, Color.WHITE);
+            drawPower(c, w - side, bottom - dp(5), powered);
+
+            p.setColor(Color.rgb(35,35,35));
+            p.setStrokeWidth(dp(1));
+            c.drawLine(side, bottom + dp(11), w - side, bottom + dp(11), p);
         }
-        void drawSlider(Canvas c,float x1,float y,float x2,float f){
-            p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(55,55,55));c.drawRect(x1,y-dp(1),x2,y+dp(1),p);
-            p.setColor(Color.WHITE);float e=x1+(x2-x1)*f;c.drawRect(x1,y-dp(1),e,y+dp(1),p);c.drawCircle(e,y,dp(6),p);
-        }
-        void drawPower(Canvas c,float x,float y,boolean on){
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(2));p.setColor(Color.WHITE);c.drawCircle(x,y,dp(13),p);
-            p.setStyle(Paint.Style.FILL);c.drawRect(x-dp(2),y-dp(16),x+dp(2),y,p);
-            if(!on){p.setColor(Color.BLACK);c.drawCircle(x,y,dp(10),p);}
-        }
-        void drawWheel(Canvas c){
-            int size=Math.max(2,(int)(radius*2));Bitmap b=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);
-            int[] px=new int[size*size];
-            for(int yy=0;yy<size;yy++)for(int xx=0;xx<size;xx++){
-                float dx=xx-radius,dy=yy-radius,rr=(float)Math.sqrt(dx*dx+dy*dy);
-                if(rr>radius){px[yy*size+xx]=Color.TRANSPARENT;continue;}
-                float hue=(float)((Math.toDegrees(Math.atan2(dy,dx))+360)%360),sat=Math.min(1f,rr/radius);
-                px[yy*size+xx]=Color.HSVToColor(new float[]{hue,sat,1f});
-            }
-            b.setPixels(px,0,size,0,0,size,size);c.drawBitmap(b,cx-radius,cy-radius,p);
-            float[] hsv=new float[3];Color.colorToHSV(rgb,hsv);float a=(float)Math.toRadians(hsv[0]),r=hsv[1]*radius;
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(2));p.setColor(Color.WHITE);
-            c.drawCircle(cx+(float)Math.cos(a)*r,cy+(float)Math.sin(a)*r,dp(7),p);
-        }
-        @Override public boolean onTouchEvent(MotionEvent e){
-            float x=e.getX(),y=e.getY(),labelY=cy+radius+dp(45),sy=labelY+dp(75),sliderY=sy+dp(25);
-            if(e.getAction()==MotionEvent.ACTION_DOWN||e.getAction()==MotionEvent.ACTION_MOVE){
-                float dx=x-cx,dy=y-cy,dist=(float)Math.sqrt(dx*dx+dy*dy);
-                if(dist<=radius+dp(15)){
-                    float hue=(float)((Math.toDegrees(Math.atan2(dy,dx))+360)%360),sat=Math.min(1f,dist/radius);
-                    rgb=Color.HSVToColor(new float[]{hue,sat,1f});setColor(rgb);invalidate();return true;
+
+        void drawPresets(Canvas c, float y) {
+            float w = getWidth();
+            float side = dp(24);
+            float usable = w - side * 2;
+            float step = usable / 8f;
+            float r = dp(15);
+
+            for (int i = 0; i < PRESETS.length; i++) {
+                float x = side + step * (i + 0.5f);
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(PRESETS[i]);
+                c.drawCircle(x, y, r, p);
+
+                if (rgb == PRESETS[i]) {
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(dp(2));
+                    p.setColor(Color.WHITE);
+                    c.drawCircle(x, y, r + dp(4), p);
                 }
-                if(Math.abs(y-sliderY)<dp(25)&&x>=dp(22)&&x<=getWidth()-dp(22)){
-                    brightness=Math.max(1,Math.min(100,Math.round((x-dp(22))/(getWidth()-dp(44))*100f)));
-                    setBrightness(brightness);return true;
+            }
+        }
+
+        void drawSlider(Canvas c, float x1, float y, float x2, float frac) {
+            // Wide touch target + rounded, high-contrast track for smoother control.
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(dp(3));
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setColor(Color.rgb(55,55,55));
+            c.drawLine(x1, y, x2, y, p);
+
+            float end = x1 + (x2 - x1) * frac;
+            p.setColor(Color.WHITE);
+            c.drawLine(x1, y, end, y, p);
+            p.setStyle(Paint.Style.FILL);
+            c.drawCircle(end, y, dp(7), p);
+        }
+
+        void drawPower(Canvas c, float x, float y, boolean on) {
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(dp(2));
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setColor(Color.WHITE);
+            c.drawCircle(x, y, dp(13), p);
+            p.setStyle(Paint.Style.FILL);
+            c.drawRect(x-dp(2), y-dp(16), x+dp(2), y, p);
+            if (!on) {
+                p.setColor(Color.BLACK);
+                c.drawCircle(x, y, dp(10), p);
+            }
+        }
+
+        void drawWheel(Canvas c) {
+            int size = Math.max(2, (int)(radius * 2));
+            Bitmap b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            int[] px = new int[size * size];
+
+            for (int yy = 0; yy < size; yy++) {
+                for (int xx = 0; xx < size; xx++) {
+                    float dx = xx - radius, dy = yy - radius;
+                    float rr = (float)Math.sqrt(dx*dx + dy*dy);
+                    if (rr > radius) {
+                        px[yy*size + xx] = Color.TRANSPARENT;
+                        continue;
+                    }
+                    float hue = (float)((Math.toDegrees(Math.atan2(dy, dx)) + 360) % 360);
+                    float sat = Math.min(1f, rr / radius);
+                    px[yy*size + xx] = Color.HSVToColor(new float[]{hue, sat, 1f});
                 }
             }
-            if(e.getAction()==MotionEvent.ACTION_UP){
-                float bx=getWidth()-dp(32),by=getHeight()-dp(33);
-                if(Math.hypot(x-bx,y-by)<dp(30)){setPower(!powered);return true;}
-                if(y<dp(90)&&x>getWidth()-dp(150)){try{if(gatt!=null)gatt.close();}catch(Exception ignored){}writeChar=null;connecting=false;startScan();return true;}
+
+            b.setPixels(px, 0, size, 0, 0, size, size);
+            c.drawBitmap(b, cx-radius, cy-radius, p);
+
+            float[] hsv = new float[3];
+            Color.colorToHSV(rgb, hsv);
+            float a = (float)Math.toRadians(hsv[0]);
+            float r = hsv[1] * radius;
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(dp(2));
+            p.setColor(Color.WHITE);
+            c.drawCircle(cx + (float)Math.cos(a)*r,
+                    cy + (float)Math.sin(a)*r, dp(8), p);
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent e) {
+            float x = e.getX(), y = e.getY();
+            float w = getWidth();
+            float side = dp(24);
+
+            float presetY = cy + radius + dp(34);
+            float labelY = presetY + dp(46);
+            float sy = labelY + dp(68);
+            float sliderY = sy + dp(25);
+
+            if (e.getAction() == MotionEvent.ACTION_DOWN ||
+                e.getAction() == MotionEvent.ACTION_MOVE) {
+
+                float dx = x - cx, dy = y - cy;
+                float dist = (float)Math.sqrt(dx*dx + dy*dy);
+
+                if (dist <= radius + dp(18)) {
+                    float hue = (float)((Math.toDegrees(Math.atan2(dy, dx)) + 360) % 360);
+                    float sat = Math.min(1f, dist / radius);
+                    rgb = Color.HSVToColor(new float[]{hue, sat, 1f});
+                    activePreset = -1;
+                    setColor(rgb);
+                    invalidate();
+                    return true;
+                }
+
+                // Large invisible touch area around the slider; value follows the finger
+                // continuously rather than requiring the user to hit the thin line.
+                if (Math.abs(y - sliderY) < dp(34) &&
+                    x >= side - dp(8) && x <= w - side + dp(8)) {
+                    float fraction = (x - side) / (w - side * 2);
+                    fraction = Math.max(0f, Math.min(1f, fraction));
+                    brightness = Math.round(fraction * 100f);
+                    brightness = Math.max(1, Math.min(100, brightness));
+                    setBrightness(brightness);
+                    invalidate();
+                    return true;
+                }
+
+                // Preset color row has a generous touch target.
+                if (Math.abs(y - presetY) < dp(30)) {
+                    float usable = w - side * 2;
+                    float step = usable / 8f;
+                    int index = (int)((x - side) / step);
+                    if (index >= 0 && index < PRESETS.length) {
+                        rgb = PRESETS[index];
+                        activePreset = index;
+                        setColor(rgb);
+                        invalidate();
+                        return true;
+                    }
+                }
+            }
+
+            if (e.getAction() == MotionEvent.ACTION_UP) {
+                float bx = w - side, by = getHeight() - dp(35);
+                if (Math.hypot(x-bx, y-by) < dp(34)) {
+                    setPower(!powered);
+                    return true;
+                }
+
+                // Tap the status area to force a fresh scan/reconnect.
+                if (y < dp(90) && x > w-dp(170)) {
+                    try { if (gatt != null) gatt.close(); } catch(Exception ignored) {}
+                    writeChar = null;
+                    connecting = false;
+                    startScan();
+                    return true;
+                }
             }
             return true;
         }
