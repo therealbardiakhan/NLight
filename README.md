@@ -1,12 +1,14 @@
-# Nothing Light v1.3
+# Nothing Light v1.4
 
 Minimal MR Star / GATT-DEMO BLE controller.
 
-### v1.3
-- Fixed Android 15/16 edge-to-edge drawing: UI is translated below the real status-bar inset.
-- Added extra top breathing room.
-- Larger, more readable typography and controls.
-- Increased side margins and touch targets.
-- Added a small `UI` control in the top-right corner.
-- UI scale is adjustable from 80% to 135% in 5% steps and is saved for the device.
-- Preset colors and brightness controls remain available.
+### v1.4
+- Disconnected/connecting states now use a centered minimal UI.
+- Full controller UI appears only after connection.
+- Android 15/16 edge-to-edge safe.
+- Larger, readable controls with persistent UI scale.
+- Added effects menu with Solid, Breath, Rainbow, Color Cycle, Flash, Fade, Wave and Random.
+- Added 2000K–6500K color-temperature control.
+- Presets, brightness, reconnect and UI scaling retained.
+
+Note: effect commands use the MR Star BLE command interface; behavior depends on the firmware in the specific controller.
