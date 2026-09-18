@@ -5,324 +5,222 @@ import android.app.Activity;
 import android.bluetooth.*;
 import android.bluetooth.le.*;
 import android.content.*;
-import android.content.pm.PackageManager;
 import android.graphics.*;
-import android.graphics.drawable.ColorDrawable;
 import android.os.*;
 import android.view.*;
-import android.widget.*;
-
 import java.util.*;
 
 public class MainActivity extends Activity {
-    static final String DEVICE_NAME = "GATT--DEMO";
+    static final UUID SERVICE_UUID = UUID.fromString("00002022-0000-1000-8000-00805f9b34fb");
     static final UUID WRITE_UUID = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb");
 
     BluetoothAdapter adapter;
     BluetoothGatt gatt;
     BluetoothGattCharacteristic writeChar;
     Handler handler = new Handler(Looper.getMainLooper());
-    boolean powered = true;
-    int rgb = Color.rgb(255, 255, 255);
+    MainView view;
+    String state = "SCANNING";
+    int rgb = Color.RED;
     int brightness = 80;
-
-    TextView status;
-    MainView mainView;
+    boolean powered = true, connecting = false;
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
-
-        status = new TextView(this);
-        status.setText("STARTING");
-        mainView = new MainView(this);
-        setContentView(mainView);
-
+        view = new MainView(this);
+        setContentView(view);
         BluetoothManager bm = (BluetoothManager)getSystemService(BLUETOOTH_SERVICE);
         adapter = bm.getAdapter();
-
-        if (Build.VERSION.SDK_INT >= 31) {
-            requestPermissions(new String[]{
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.BLUETOOTH_CONNECT
-            }, 42);
-        } else {
-            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 43);
-        }
+        if (Build.VERSION.SDK_INT >= 31)
+            requestPermissions(new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT}, 10);
+        else
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 11);
     }
 
     @Override public void onRequestPermissionsResult(int r, String[] p, int[] g) {
         super.onRequestPermissionsResult(r,p,g);
-        if (r == 42 || r == 43) startScan();
+        if (r == 10 || r == 11) startScan();
     }
 
     void startScan() {
-        if (adapter == null || !adapter.isEnabled()) {
-            status.setText("BLUETOOTH OFF");
-            return;
-        }
-        status.setText("SCANNING");
-        BluetoothLeScanner scanner = adapter.getBluetoothLeScanner();
-        if (scanner == null) return;
+        if (adapter == null || !adapter.isEnabled()) { state="BLUETOOTH OFF"; view.invalidate(); return; }
+        if (connecting || writeChar != null) return;
+        state="SCANNING"; view.invalidate();
+        final BluetoothLeScanner scanner=adapter.getBluetoothLeScanner();
+        if (scanner==null) return;
 
-        ScanCallback cb = new ScanCallback() {
+        final ScanCallback cb=new ScanCallback() {
             @Override public void onScanResult(int type, ScanResult result) {
-                BluetoothDevice d = result.getDevice();
-                String n = result.getScanRecord() == null ? null :
-                        result.getScanRecord().getDeviceName();
-                if (n == null) n = safeName(d);
-                if (matches(n)) {
-                    scanner.stopScan(this);
+                BluetoothDevice d=result.getDevice();
+                ScanRecord sr=result.getScanRecord();
+                boolean serviceMatch=sr!=null && sr.getServiceUuids()!=null &&
+                    sr.getServiceUuids().stream().anyMatch(x->x.getUuid().equals(SERVICE_UUID));
+                String n="";
+                try { n=d.getName(); } catch(Exception ignored) {}
+                boolean nameMatch=n!=null && (n.toUpperCase(Locale.US).contains("GATT") ||
+                    n.toUpperCase(Locale.US).contains("DEMO") || n.toUpperCase(Locale.US).contains("MR STAR"));
+                if(serviceMatch || nameMatch) {
+                    try { scanner.stopScan(this); } catch(Exception ignored) {}
                     connect(d);
                 }
             }
-            @Override public void onScanFailed(int e) {
-                status.setText("SCAN ERROR");
-            }
+            @Override public void onScanFailed(int e) { state="SCAN ERROR"; view.invalidate(); }
         };
-        scanner.startScan(cb);
-        handler.postDelayed(() -> {
-            try { scanner.stopScan(cb); } catch(Exception ignored) {}
-            if (writeChar == null) status.setText("NOT FOUND");
-        }, 10000);
-    }
-
-    boolean matches(String n) {
-        if (n == null) return false;
-        String s = n.toUpperCase(Locale.US).replace("–","-");
-        return s.contains("GATT") && s.contains("DEMO");
-    }
-
-    String safeName(BluetoothDevice d) {
-        try { return d.getName(); } catch(SecurityException e) { return ""; }
+        try {
+            scanner.startScan(cb);
+            handler.postDelayed(()->{
+                try { scanner.stopScan(cb); } catch(Exception ignored) {}
+                if(writeChar==null && !connecting){ state="NOT FOUND"; view.invalidate(); }
+            },12000);
+        } catch(Exception e) { state="SCAN ERROR"; view.invalidate(); }
     }
 
     void connect(BluetoothDevice d) {
-        status.setText("CONNECTING");
+        if(connecting) return;
+        connecting=true; state="CONNECTING"; view.invalidate();
         try {
-            gatt = d.connectGatt(this, false, new BluetoothGattCallback() {
-                @Override public void onConnectionStateChange(BluetoothGatt g, int st, int ns) {
-                    runOnUiThread(() -> status.setText(
-                            ns == BluetoothProfile.STATE_CONNECTED ? "CONNECTED" : "DISCONNECTED"));
-                    if (ns == BluetoothProfile.STATE_CONNECTED) g.discoverServices();
-                    if (ns == BluetoothProfile.STATE_DISCONNECTED) {
-                        writeChar = null;
-                        handler.postDelayed(() -> startScan(), 1500);
+            gatt=d.connectGatt(this,false,new BluetoothGattCallback() {
+                @Override public void onConnectionStateChange(BluetoothGatt g,int st,int ns) {
+                    if(ns==BluetoothProfile.STATE_CONNECTED) {
+                        handler.postDelayed(()->{ try{g.discoverServices();}catch(Exception ignored){} },250);
+                    } else if(ns==BluetoothProfile.STATE_DISCONNECTED) {
+                        writeChar=null; connecting=false; state="DISCONNECTED"; view.invalidate();
+                        handler.postDelayed(()->startScan(),1200);
                     }
                 }
-                @Override public void onServicesDiscovered(BluetoothGatt g, int st) {
-                    writeChar = null;
-                    for (BluetoothGattService s : g.getServices()) {
-                        BluetoothGattCharacteristic c = s.getCharacteristic(WRITE_UUID);
-                        if (c != null) { writeChar = c; break; }
-                        for (BluetoothGattCharacteristic x : s.getCharacteristics()) {
-                            int p = x.getProperties();
-                            if ((p & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0 ||
-                                (p & BluetoothGattCharacteristic.PROPERTY_WRITE) != 0) {
-                                // Fallback: use a writable characteristic if FFF3 isn't exposed.
-                                if (x.getUuid().toString().toLowerCase(Locale.US).endsWith("fff3-0000-1000-8000-00805f9b34fb"))
-                                    writeChar = x;
-                            }
-                        }
+                @Override public void onServicesDiscovered(BluetoothGatt g,int st) {
+                    BluetoothGattService s=g.getService(SERVICE_UUID);
+                    if(s!=null) writeChar=s.getCharacteristic(WRITE_UUID);
+                    if(writeChar==null) for(BluetoothGattService x:g.getServices()){
+                        BluetoothGattCharacteristic c=x.getCharacteristic(WRITE_UUID);
+                        if(c!=null){writeChar=c;break;}
                     }
-                    runOnUiThread(() -> {
-                        status.setText(writeChar != null ? "CONNECTED" : "NO WRITE CHAR");
-                        if (writeChar != null) {
-                            send(powerFrame(true));
-                            send(colorFrame(rgb));
-                            send(brightnessFrame(brightness));
-                        }
-                    });
+                    connecting=false;
+                    if(writeChar!=null){
+                        state="CONNECTED"; view.invalidate();
+                        handler.postDelayed(()->{
+                            send(powerFrame(powered));
+                            handler.postDelayed(()->send(colorFrame(rgb)),80);
+                            handler.postDelayed(()->send(brightnessFrame(brightness)),160);
+                        },120);
+                    } else {
+                        state="NO FFF3"; view.invalidate();
+                        try{g.disconnect();}catch(Exception ignored){}
+                        handler.postDelayed(()->startScan(),1000);
+                    }
                 }
             });
-        } catch(SecurityException e) {
-            status.setText("BLUETOOTH PERMISSION");
-        }
+        } catch(Exception e){ connecting=false; state="BLUETOOTH ERROR"; view.invalidate(); }
     }
 
-    void send(byte[] data) {
-        if (gatt == null || writeChar == null) return;
+    void send(byte[] payload) {
+        if(gatt==null || writeChar==null) return;
         try {
             writeChar.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
-            writeChar.setValue(data);
+            writeChar.setValue(payload);
             gatt.writeCharacteristic(writeChar);
         } catch(Exception ignored) {}
     }
 
-    byte[] powerFrame(boolean on) {
-        return new byte[]{(byte)0xBC,0x01,0x01,(byte)(on?1:0),0x55};
+    byte[] frame(int command, byte[] args) {
+        byte[] out=new byte[4+args.length];
+        out[0]=(byte)0xBC; out[1]=(byte)command; out[2]=(byte)args.length;
+        System.arraycopy(args,0,out,3,args.length);
+        out[out.length-1]=(byte)0x55;
+        return out;
     }
 
-    byte[] colorFrame(int c) {
-        float[] hsv = new float[3];
-        Color.colorToHSV(c, hsv);
-        int hue = Math.round(hsv[0]);
-        if (hue == 360) hue = 0;
-        int sat = Math.round(hsv[1] * 1000f);
-        return new byte[]{(byte)0xBC,0x04,0x06,
-                (byte)(hue/256),(byte)(hue%256),
-                (byte)(sat/256),(byte)(sat%256),
-                0,0,0x55};
+    byte[] powerFrame(boolean on){ return frame(0x01,new byte[]{(byte)(on?1:0)}); }
+
+    byte[] colorFrame(int color) {
+        float[] hsv=new float[3]; Color.colorToHSV(color,hsv);
+        int hue=Math.round(hsv[0]); if(hue>=360) hue=0;
+        int sat=Math.round(hsv[1]*100f);
+        int sat10=sat*10;
+        return frame(0x04,new byte[]{(byte)(hue>>8),(byte)hue,(byte)(sat10>>8),(byte)sat10,0,0});
     }
 
     byte[] brightnessFrame(int pct) {
-        int v = Math.max(3, Math.min(100, pct));
-        return new byte[]{(byte)0xBC,0x05,0x06,
-                0,(byte)v,0,0,0,0,0x55};
+        int v=Math.max(0,Math.min(100,pct));
+        int raw=1024*v/100;
+        return frame(0x05,new byte[]{(byte)(raw>>8),(byte)raw,0,0,0,0});
     }
 
-    void setPower(boolean on) {
-        powered = on;
-        send(powerFrame(on));
-        mainView.invalidate();
-    }
+    void setPower(boolean on){ powered=on; send(powerFrame(on)); view.invalidate(); }
+    void setColor(int c){ rgb=c; powered=true; send(powerFrame(true)); handler.postDelayed(()->send(colorFrame(c)),50); view.invalidate(); }
+    void setBrightness(int b){ brightness=b; send(brightnessFrame(b)); view.invalidate(); }
 
-    void setColor(int c) {
-        rgb = c;
-        if (!powered) { setPower(true); return; }
-        send(colorFrame(c));
-    }
-
-    void setBrightness(int b) {
-        brightness = b;
-        if (!powered) return;
-        send(brightnessFrame(b));
-    }
-
-    @Override protected void onDestroy() {
-        super.onDestroy();
-        try { if (gatt != null) gatt.close(); } catch(Exception ignored) {}
-    }
+    @Override protected void onDestroy(){ try{if(gatt!=null)gatt.close();}catch(Exception ignored){} super.onDestroy(); }
 
     class MainView extends View {
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        RectF wheel = new RectF();
-        float cx, cy, radius;
-        boolean draggingBrightness = false;
-
-        MainView(Context c) {
-            super(c);
-            p.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
-            setBackgroundColor(Color.BLACK);
+        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
+        float den,cx,cy,radius;
+        MainView(Context c){ super(c); den=getResources().getDisplayMetrics().density; setBackgroundColor(Color.BLACK); }
+        float dp(float x){return x*den;}
+        void txt(Canvas c,String s,float x,float y,float sz,int col){
+            p.setStyle(Paint.Style.FILL); p.setTypeface(Typeface.create("monospace",Typeface.NORMAL));
+            p.setTextSize(dp(sz)); p.setColor(col); c.drawText(s,x,y,p);
         }
-
-        void text(Canvas c, String s, float x, float y, float size, int color) {
-            p.setStyle(Paint.Style.FILL);
-            p.setTextSize(size);
-            p.setColor(color);
-            p.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
-            c.drawText(s, x, y, p);
-        }
-
-        @Override protected void onDraw(Canvas c) {
-            super.onDraw(c);
-            float w=getWidth(), h=getHeight();
-            cx=w/2f;
-            cy=Math.min(h*0.43f, 500f);
-            radius=Math.min(w*0.31f, 170f);
-
-            text(c, "NOTHING LIGHT", 28, 44, 16, Color.WHITE);
-            text(c, "GATT—DEMO", 28, 72, 12, Color.LTGRAY);
-
-            p.setColor(statusColor());
-            c.drawCircle(w-34, 38, 5, p);
-            text(c, status==null ? "..." : status.getText().toString(), w-125, 44, 10, Color.LTGRAY);
-
+        @Override protected void onDraw(Canvas c){
+            super.onDraw(c); float w=getWidth(),h=getHeight();
+            float top=dp(34); cx=w/2f; cy=top+dp(245); radius=Math.min(dp(122),w*.37f);
+            txt(c,"NOTHING LIGHT",dp(22),top,17,Color.WHITE);
+            txt(c,"GATT—DEMO",dp(22),top+dp(28),11,Color.GRAY);
+            p.setColor(state.equals("CONNECTED")?Color.WHITE:(state.equals("CONNECTING")||state.equals("SCANNING")?Color.GRAY:Color.DKGRAY));
+            c.drawCircle(w-dp(27),top-dp(5),dp(4),p); txt(c,state,w-dp(125),top,9,Color.GRAY);
             drawWheel(c);
-            text(c, "COLOR", 28, cy+radius+55, 11, Color.GRAY);
-            text(c, String.format(Locale.US, "#%06X", rgb & 0xFFFFFF), 28, cy+radius+79, 14, Color.WHITE);
-
-            float y=cy+radius+130;
-            text(c, "BRIGHTNESS", 28, y, 11, Color.GRAY);
-            drawSlider(c, 28, y+25, w-28, brightness/100f);
-            text(c, brightness+"%", 28, y+67, 13, Color.WHITE);
-
-            float bottom=h-45;
-            text(c, powered ? "ON" : "OFF", 28, bottom, 12, Color.WHITE);
-            drawPower(c, w-48, bottom-5, powered);
-
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(1);
-            p.setColor(Color.rgb(45,45,45));
-            c.drawLine(28,bottom+12,w-28,bottom+12,p);
+            float labelY=cy+radius+dp(45);
+            txt(c,"COLOR",dp(22),labelY,10,Color.GRAY);
+            txt(c,String.format(Locale.US,"#%06X",rgb&0xFFFFFF),dp(22),labelY+dp(22),14,Color.WHITE);
+            float sy=labelY+dp(75); txt(c,"BRIGHTNESS",dp(22),sy,10,Color.GRAY);
+            drawSlider(c,dp(22),sy+dp(25),w-dp(22),brightness/100f);
+            txt(c,brightness+"%",dp(22),sy+dp(58),13,Color.WHITE);
+            float bottom=h-dp(28); txt(c,powered?"ON":"OFF",dp(22),bottom,11,Color.WHITE);
+            drawPower(c,w-dp(32),bottom-dp(5),powered);
+            p.setColor(Color.rgb(35,35,35)); p.setStrokeWidth(dp(1));
+            c.drawLine(dp(22),bottom+dp(11),w-dp(22),bottom+dp(11),p);
         }
-
-        int statusColor() {
-            String s=status==null?"":status.getText().toString();
-            if (s.equals("CONNECTED")) return Color.WHITE;
-            if (s.equals("CONNECTING") || s.equals("SCANNING")) return Color.GRAY;
-            return Color.rgb(110,110,110);
+        void drawSlider(Canvas c,float x1,float y,float x2,float f){
+            p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(55,55,55));c.drawRect(x1,y-dp(1),x2,y+dp(1),p);
+            p.setColor(Color.WHITE);float e=x1+(x2-x1)*f;c.drawRect(x1,y-dp(1),e,y+dp(1),p);c.drawCircle(e,y,dp(6),p);
         }
-
-        void drawPower(Canvas c,float x,float y,boolean on) {
-            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(2); p.setColor(Color.WHITE);
-            c.drawCircle(x,y,14,p);
-            p.setStyle(Paint.Style.FILL);
-            c.drawRect(x-2,y-17,x+2,y,p);
-            if(!on) { p.setColor(Color.BLACK); c.drawCircle(x,y,11,p); }
+        void drawPower(Canvas c,float x,float y,boolean on){
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(2));p.setColor(Color.WHITE);c.drawCircle(x,y,dp(13),p);
+            p.setStyle(Paint.Style.FILL);c.drawRect(x-dp(2),y-dp(16),x+dp(2),y,p);
+            if(!on){p.setColor(Color.BLACK);c.drawCircle(x,y,dp(10),p);}
         }
-
-        void drawSlider(Canvas c,float x1,float y,float x2,float frac) {
-            p.setStyle(Paint.Style.FILL); p.setColor(Color.rgb(55,55,55));
-            c.drawRect(x1,y-1,x2,y+1,p);
-            p.setColor(Color.WHITE);
-            c.drawRect(x1,y-1,x1+(x2-x1)*frac,y+1,p);
-            c.drawCircle(x1+(x2-x1)*frac,y,7,p);
-        }
-
-        void drawWheel(Canvas c) {
-            int size=(int)(radius*2.0f);
-            Bitmap b=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);
+        void drawWheel(Canvas c){
+            int size=Math.max(2,(int)(radius*2));Bitmap b=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);
             int[] px=new int[size*size];
-            for(int yy=0;yy<size;yy++) for(int xx=0;xx<size;xx++) {
-                float dx=xx-radius, dy=yy-radius;
-                float rr=(float)Math.sqrt(dx*dx+dy*dy);
-                if(rr>radius) { px[yy*size+xx]=Color.TRANSPARENT; continue; }
-                float hue=(float)((Math.toDegrees(Math.atan2(dy,dx))+360)%360);
-                float sat=Math.min(1f,rr/radius);
+            for(int yy=0;yy<size;yy++)for(int xx=0;xx<size;xx++){
+                float dx=xx-radius,dy=yy-radius,rr=(float)Math.sqrt(dx*dx+dy*dy);
+                if(rr>radius){px[yy*size+xx]=Color.TRANSPARENT;continue;}
+                float hue=(float)((Math.toDegrees(Math.atan2(dy,dx))+360)%360),sat=Math.min(1f,rr/radius);
                 px[yy*size+xx]=Color.HSVToColor(new float[]{hue,sat,1f});
             }
-            b.setPixels(px,0,size,0,0,size,size);
-            c.drawBitmap(b,cx-radius,cy-radius,p);
-            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(2); p.setColor(Color.WHITE);
-            float[] hsv=new float[3]; Color.colorToHSV(rgb,hsv);
-            float a=(float)Math.toRadians(hsv[0]);
-            float r=hsv[1]*radius;
-            c.drawCircle(cx+(float)Math.cos(a)*r,cy+(float)Math.sin(a)*r,8,p);
+            b.setPixels(px,0,size,0,0,size,size);c.drawBitmap(b,cx-radius,cy-radius,p);
+            float[] hsv=new float[3];Color.colorToHSV(rgb,hsv);float a=(float)Math.toRadians(hsv[0]),r=hsv[1]*radius;
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(2));p.setColor(Color.WHITE);
+            c.drawCircle(cx+(float)Math.cos(a)*r,cy+(float)Math.sin(a)*r,dp(7),p);
         }
-
-        @Override public boolean onTouchEvent(android.view.MotionEvent e) {
-            float x=e.getX(), y=e.getY();
-            if(e.getAction()==MotionEvent.ACTION_DOWN || e.getAction()==MotionEvent.ACTION_MOVE) {
-                float dx=x-cx,dy=y-cy, dist=(float)Math.sqrt(dx*dx+dy*dy);
-                if(dist<=radius+18 && dist>=0) {
-                    float hue=(float)((Math.toDegrees(Math.atan2(dy,dx))+360)%360);
-                    float sat=Math.min(1f,dist/radius);
-                    rgb=Color.HSVToColor(new float[]{hue,sat,1f});
-                    setColor(rgb);
-                    invalidate();
-                    return true;
+        @Override public boolean onTouchEvent(MotionEvent e){
+            float x=e.getX(),y=e.getY(),labelY=cy+radius+dp(45),sy=labelY+dp(75),sliderY=sy+dp(25);
+            if(e.getAction()==MotionEvent.ACTION_DOWN||e.getAction()==MotionEvent.ACTION_MOVE){
+                float dx=x-cx,dy=y-cy,dist=(float)Math.sqrt(dx*dx+dy*dy);
+                if(dist<=radius+dp(15)){
+                    float hue=(float)((Math.toDegrees(Math.atan2(dy,dx))+360)%360),sat=Math.min(1f,dist/radius);
+                    rgb=Color.HSVToColor(new float[]{hue,sat,1f});setColor(rgb);invalidate();return true;
                 }
-                float sy=cy+radius+155;
-                if(Math.abs(y-sy)<30 && x>=28 && x<=getWidth()-28) {
-                    brightness=Math.round((x-28)/(getWidth()-56)*100f);
-                    brightness=Math.max(3,Math.min(100,brightness));
-                    setBrightness(brightness);
-                    invalidate();
-                    return true;
+                if(Math.abs(y-sliderY)<dp(25)&&x>=dp(22)&&x<=getWidth()-dp(22)){
+                    brightness=Math.max(1,Math.min(100,Math.round((x-dp(22))/(getWidth()-dp(44))*100f)));
+                    setBrightness(brightness);return true;
                 }
             }
-            if(e.getAction()==MotionEvent.ACTION_UP) {
-                float bx=getWidth()-48, by=getHeight()-50;
-                if(Math.hypot(x-bx,y-by)<30) {
-                    setPower(!powered);
-                    return true;
-                }
-                if(y<90 && x>getWidth()-160) {
-                    if(gatt!=null) try{gatt.close();}catch(Exception ignored){}
-                    writeChar=null; startScan(); return true;
-                }
+            if(e.getAction()==MotionEvent.ACTION_UP){
+                float bx=getWidth()-dp(32),by=getHeight()-dp(33);
+                if(Math.hypot(x-bx,y-by)<dp(30)){setPower(!powered);return true;}
+                if(y<dp(90)&&x>getWidth()-dp(150)){try{if(gatt!=null)gatt.close();}catch(Exception ignored){}writeChar=null;connecting=false;startScan();return true;}
             }
             return true;
         }
