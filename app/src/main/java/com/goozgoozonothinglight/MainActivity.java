@@ -292,12 +292,6 @@ public class MainActivity extends Activity {
         view.invalidate();
     }
 
-    void setUiScale(float scale) {
-        uiScale = Math.max(0.80f, Math.min(1.35f, scale));
-        prefs.edit().putFloat("ui_scale", uiScale).apply();
-        if (view != null) view.invalidate();
-    }
-
     @Override protected void onDestroy(){ try{if(gatt!=null)gatt.close();}catch(Exception ignored){} super.onDestroy(); }
 
     class MainView extends View {
@@ -405,21 +399,6 @@ public class MainActivity extends Activity {
             p.setColor(state.equals("CONNECTING")?Color.GRAY:Color.DKGRAY);
             c.drawCircle(w/2f,centerY-dp(45),dp(5),p);
         }
-        void drawSizePanel(Canvas c,float w,float h,float side){
-            float pw=Math.min(dp(270),w-side*2),ph=dp(100),left=w-side-pw,top=dp(82);
-            p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(10,10,10));
-            c.drawRoundRect(left,top,w-side,top+ph,dp(8),dp(8),p);
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(raw(1));p.setColor(Color.rgb(70,70,70));
-            c.drawRoundRect(left,top,w-side,top+ph,dp(8),dp(8),p);
-            txt(c,"UI SIZE",left+dp(15),top+dp(25),11,Color.GRAY);
-            txt(c,String.format(Locale.US,"%.0f%%",uiScale*100f),left+dp(15),top+dp(52),19,Color.WHITE);
-            float mx=left+pw-dp(68),px=left+pw-dp(24),by=top+dp(50);
-            p.setStyle(Paint.Style.STROKE);p.setColor(Color.WHITE);
-            c.drawCircle(mx,by,dp(15),p);c.drawCircle(px,by,dp(15),p);
-            txt(c,"−",mx-dp(7),by+dp(7),20,Color.WHITE);txt(c,"+",px-dp(7),by+dp(7),18,Color.WHITE);
-            txt(c,"TAP UI TO CLOSE",left+dp(15),top+dp(82),9,Color.GRAY);
-        }
-
         void drawSleepButton(Canvas c,float x,float y){
             p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(raw(1)); p.setColor(Color.rgb(80,80,80));
             float bw=dp(58),bh=dp(30);
