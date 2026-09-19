@@ -29,7 +29,6 @@ public class MainActivity extends Activity {
     boolean effectsPanel = false;
     int effect = 0;
     int colorTemperature = 4000;
-    // Real MR Star effect IDs. Kept deliberately small for reliability.
     final int[] EFFECT_CODES = {7, 10, 3, 4, 55, 76, 91};
 
     android.content.SharedPreferences prefs;
@@ -173,15 +172,12 @@ public class MainActivity extends Activity {
         return frame(0x05,new byte[]{(byte)(raw>>8),(byte)raw,0,0,0,0});
     }
 
-    // Exact MR Star protocol:
-    // BC 06 02 EFFECT_HI EFFECT_LO 55
+    // MR Star effect packet: BC 06 02 EFFECT_HI EFFECT_LO 55
     byte[] effectFrame(int effectCode) {
-        int e = Math.max(0, Math.min(95, effectCode));
-        return frame(0x06, new byte[]{(byte)(e >> 8), (byte)e});
+        return frame(0x06, new byte[]{(byte)(effectCode >> 8), (byte)effectCode});
     }
 
-    // Exact MR Star protocol:
-    // BC 08 01 SPEED 55
+    // MR Star effect speed packet: BC 08 01 SPEED 55
     byte[] effectSpeedFrame(int speed) {
         return frame(0x08, new byte[]{(byte)Math.max(0, Math.min(100, speed))});
     }
@@ -211,15 +207,12 @@ public class MainActivity extends Activity {
     void setBrightness(int b){ brightness=b; send(brightnessFrame(b)); view.invalidate(); }
     void setEffect(int e) {
         effect = e;
-
-        // SOLID is handled as normal static color control.
         if (e == 0) {
+            // Solid = normal static RGB mode.
             send(powerFrame(true));
             handler.postDelayed(() -> send(colorFrame(rgb)), 45);
         } else {
             int code = EFFECT_CODES[e - 1];
-
-            // MR Star accepts speed separately. Send speed first and effect second.
             send(effectSpeedFrame(55));
             handler.postDelayed(() -> send(effectFrame(code)), 45);
         }
@@ -248,16 +241,7 @@ public class MainActivity extends Activity {
 
         final int[] PRESETS={Color.WHITE,Color.RED,Color.rgb(255,128,0),Color.YELLOW,
             Color.GREEN,Color.CYAN,Color.BLUE,Color.MAGENTA};
-        final String[] EFFECTS={
-            "SOLID",
-            "RAINBOW STROBE",
-            "RAINBOW GRADIENT",
-            "COLORFUL ENERGY",
-            "COLORFUL JUMPS",
-            "RAINBOW FLOW",
-            "RAINBOW TRAIL",
-            "RAINBOW RUN"
-        }
+        final String[] EFFECTS={"SOLID","RAINBOW STROBE","RAINBOW GRADIENT","COLORFUL ENERGY","COLORFUL JUMPS","RAINBOW FLOW","RAINBOW TRAIL","RAINBOW RUN"};
 
         MainView(Context c){
             super(c); den=getResources().getDisplayMetrics().density;
