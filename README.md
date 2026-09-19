@@ -1,21 +1,28 @@
-# Nothing Light v1.6.1
+# Nothing Light v1.7
 
-Stability rebuild based directly on the last known-working v1.4 project.
+Built directly from the known-working v1.6.1 project.
 
-Only the effect implementation was changed.
+## New safe features
+- Effect speed slider (1–100%).
+- Speed is sent using the documented MR Star speed packet.
+- Effect speed is remembered.
+- Last color, brightness and color-temperature values are remembered.
+- 30-minute sleep timer with a small SLEEP button; tap again to cancel.
 
-Actual MR Star packets:
-- Effect: `BC 06 02 EFFECT_HI EFFECT_LO 55`
-- Speed: `BC 08 01 SPEED 55`
+## Full feature roadmap / ideas
+Safe candidates for future releases:
+- Favorite color slots
+- Preset editing
+- Custom effect speed per effect
+- Auto reconnect to the last GATT device
+- Connection diagnostics / RSSI
+- Smooth brightness transitions
+- Double-tap power
+- Ambient microphone/music mode (opt-in)
+- Sunrise/sunset timer
+- Custom scenes
+- More exact RGB/HEX entry
+- CCT presets
+- Battery/status-friendly low-power mode
 
-Exposed modes:
-- Solid
-- Rainbow Strobe (7)
-- Rainbow Gradient (10)
-- Colorful Energy (3)
-- Colorful Jumps (4)
-- Rainbow Flow (55)
-- Rainbow Trail (76)
-- Rainbow Run (91)
-
-All v1.4 connection/UI/color/brightness/temperature functionality is otherwise unchanged.
+The current release intentionally avoids adding risky protocol commands or undocumented BLE packets.

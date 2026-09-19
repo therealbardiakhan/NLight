@@ -29,6 +29,9 @@ public class MainActivity extends Activity {
     boolean effectsPanel = false;
     int effect = 0;
     int colorTemperature = 4000;
+    int effectSpeed = 55;
+    long sleepAt = 0;
+    int[] favoriteColors = {Color.RED, Color.GREEN, Color.BLUE, Color.WHITE};
     final int[] EFFECT_CODES = {7, 10, 3, 4, 55, 76, 91};
 
     android.content.SharedPreferences prefs;
@@ -38,6 +41,10 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
         prefs = getSharedPreferences("nothing_light", MODE_PRIVATE);
+    effectSpeed = prefs.getInt("effectSpeed", 55);
+        colorTemperature = prefs.getInt("colorTemperature", 4000);
+        rgb = prefs.getInt("rgb", Color.WHITE);
+        brightness = prefs.getInt("brightness", 100);
         uiScale = prefs.getFloat("ui_scale", 1.15f);
 
         view = new MainView(this);
@@ -204,23 +211,59 @@ public class MainActivity extends Activity {
 
     void setPower(boolean on){ powered=on; send(powerFrame(on)); view.invalidate(); }
     void setColor(int c){ rgb=c; powered=true; send(powerFrame(true)); handler.postDelayed(()->send(colorFrame(c)),50); view.invalidate(); }
-    void setBrightness(int b){ brightness=b; send(brightnessFrame(b)); view.invalidate(); }
+    void setBrightness(int b){ brightness=b; prefs.edit().putInt("brightness",b).apply(); send(brightnessFrame(b)); view.invalidate(); }
     void setEffect(int e) {
-        effect = e;
-        if (e == 0) {
-            // Solid = normal static RGB mode.
+        effect = Math.max(0, Math.min(EFFECT_CODES.length, e));
+        prefs.edit().putInt("effect", effect).apply();
+
+        if (effect == 0) {
             send(powerFrame(true));
             handler.postDelayed(() -> send(colorFrame(rgb)), 45);
         } else {
-            int code = EFFECT_CODES[e - 1];
-            send(effectSpeedFrame(55));
-            handler.postDelayed(() -> send(effectFrame(code)), 45);
+            send(effectSpeedFrame(effectSpeed));
+            handler.postDelayed(() -> send(effectFrame(EFFECT_CODES[effect - 1])), 45);
         }
+        view.invalidate();
+    }
+
+    void setEffectSpeed(int speed) {
+        effectSpeed = Math.max(1, Math.min(100, speed));
+        prefs.edit().putInt("effectSpeed", effectSpeed).apply();
+        if (effect > 0) {
+            send(effectSpeedFrame(effectSpeed));
+        }
+        view.invalidate();
+    }
+
+    void saveState() {
+        prefs.edit()
+                .putInt("rgb", rgb)
+                .putInt("brightness", brightness)
+                .putInt("colorTemperature", colorTemperature)
+                .putInt("effect", effect)
+                .putInt("effectSpeed", effectSpeed)
+                .apply();
+    }
+
+    void startSleepTimer(long minutes) {
+        sleepAt = System.currentTimeMillis() + minutes * 60000L;
+        handler.postDelayed(() -> {
+            if (sleepAt != 0 && System.currentTimeMillis() >= sleepAt) {
+                setPower(false);
+                sleepAt = 0;
+            }
+        }, minutes * 60000L);
+        view.invalidate();
+    }
+
+    void cancelSleepTimer() {
+        sleepAt = 0;
         view.invalidate();
     }
 
     void setTemperature(int k) {
         colorTemperature = Math.max(2000, Math.min(6500, k));
+        prefs.edit().putInt("colorTemperature", colorTemperature).apply();
         rgb = kelvinToRgb(colorTemperature);
         setColor(rgb);
         view.invalidate();
@@ -300,14 +343,21 @@ public class MainActivity extends Activity {
             drawSlider(c,side,ty+dp(28),w-side,(colorTemperature-2000)/4500f);
             txt(c,colorTemperature+"K",side,ty+dp(63),15,Color.WHITE);
 
+            float ey=ty+dp(94);
+            txt(c,"EFFECT SPEED",side,ey,12,Color.GRAY);
+            drawSlider(c,side,ey+dp(28),w-side,(effectSpeed-1)/99f);
+            txt(c,effectSpeed+"%",side,ey+dp(63),15,Color.WHITE);
+
             float bottom=h-dp(32);
             drawEffectButton(c,side,bottom-dp(5));
             txt(c,powered?"ON":"OFF",side+dp(68),bottom,13,Color.WHITE);
+            if (effect > 0) txt(c,"S"+effectSpeed,side+dp(68),bottom-dp(18),9,Color.GRAY);
             drawPower(c,w-side,bottom-dp(5),powered);
 
             p.setColor(Color.rgb(35,35,35)); p.setStrokeWidth(raw(1));
             c.drawLine(side,bottom+dp(12),w-side,bottom+dp(12),p);
 
+            if(sleepAt!=0) txt(c,"30M",w-side-dp(35),bottom+dp(30),9,Color.GRAY);
             if(sizePanel)drawSizePanel(c,w,h,side);
             if(effectsPanel)drawEffectsPanel(c,w,h,side);
             c.restore();
@@ -349,6 +399,9 @@ public class MainActivity extends Activity {
             p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(raw(1));p.setColor(Color.rgb(80,80,80));
             c.drawRoundRect(x,y-dp(17),x+dp(58),y+dp(17),dp(5),dp(5),p);
             txt(c,"EFFECT",x+dp(8),y+dp(5),9,Color.WHITE);
+            float sx=x+dp(82);
+            c.drawRoundRect(sx,y-dp(17),sx+dp(58),y+dp(17),dp(5),dp(5),p);
+            txt(c,"SLEEP",sx+dp(8),y+dp(5),9,Color.WHITE);
         }
 
         void drawEffectsPanel(Canvas c,float w,float h,float side){
@@ -418,6 +471,7 @@ public class MainActivity extends Activity {
             cx=w/2f;cy=top+dp(190);radius=Math.min(dp(126),(w-side*2)*.38f);
             float presetY=cy+radius+dp(32),labelY=presetY+dp(45),sy=labelY+dp(72),sliderY=sy+dp(28);
             float tempY=sy+dp(94)+dp(28);
+            float effectSpeedY=sy+dp(188)+dp(28);
 
             if(sizePanel){
                 float pw=Math.min(dp(270),w-side*2),left=w-side-pw,pt=dp(82);
@@ -457,6 +511,10 @@ public class MainActivity extends Activity {
                     float f=Math.max(0,Math.min(1,(x-side)/(w-side*2)));
                     setTemperature(Math.round(2000+4500*f));return true;
                 }
+                if(Math.abs(y-effectSpeedY)<dp(38)&&x>=side-dp(10)&&x<=w-side+dp(10)){
+                    float f=Math.max(0,Math.min(1,(x-side)/(w-side*2)));
+                    setEffectSpeed(Math.round(1+99*f));return true;
+                }
                 if(Math.abs(y-presetY)<dp(34)){
                     float step=(w-side*2)/8f;int idx=(int)((x-side)/step);
                     if(idx>=0&&idx<PRESETS.length){rgb=PRESETS[idx];activePreset=idx;setColor(rgb);invalidate();return true;}
@@ -469,6 +527,10 @@ public class MainActivity extends Activity {
 
                 float bottom=h-dp(32),fx=side,fy=bottom-dp(5);
                 if(x>=fx-dp(10)&&x<=fx+dp(70)&&Math.abs(y-fy)<dp(32)){effectsPanel=true;invalidate();return true;}
+                if(x>=fx+dp(82)&&x<=fx+dp(145)&&Math.abs(y-fy)<dp(32)){
+                    if(sleepAt==0) startSleepTimer(30); else cancelSleepTimer();
+                    return true;
+                }
 
                 float bx=w-side,by=bottom-dp(5);
                 if(Math.hypot(x-bx,y-by)<dp(38)){setPower(!powered);return true;}
