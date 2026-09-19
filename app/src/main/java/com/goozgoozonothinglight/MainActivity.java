@@ -23,16 +23,16 @@ public class MainActivity extends Activity {
     int rgb = Color.RED;
     int brightness = 80;
     boolean powered = true, connecting = false;
-    float uiScale = 1.15f;
-    int insetTop = 0, insetBottom = 0;
-    boolean sizePanel = false;
-    boolean effectsPanel = false;
+        int insetTop = 0, insetBottom = 0;
+        boolean effectsPanel = false;
+    boolean sleepPanel = false;
+    float effectScroll = 0, effectTouchStartY = 0;
     int effect = 0;
     int colorTemperature = 4000;
     int effectSpeed = 55;
     long sleepAt = 0;
     int[] favoriteColors = {Color.RED, Color.GREEN, Color.BLUE, Color.WHITE};
-    final int[] EFFECT_CODES = {2, 7, 10, 3, 4, 55, 76, 91};
+    final int[] EFFECT_CODES = {1,2,3,4,7,9,10,26,27,28,29,30,31,32,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95};
 
     android.content.SharedPreferences prefs;
 
@@ -45,7 +45,6 @@ public class MainActivity extends Activity {
         colorTemperature = prefs.getInt("colorTemperature", 4000);
         rgb = prefs.getInt("rgb", Color.WHITE);
         brightness = prefs.getInt("brightness", 100);
-        uiScale = prefs.getFloat("ui_scale", 1.15f);
 
         view = new MainView(this);
         setContentView(view);
@@ -245,6 +244,24 @@ public class MainActivity extends Activity {
                 .apply();
     }
 
+    void showCustomSleepDialog(){
+        final android.widget.EditText input=new android.widget.EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setHint("Minutes (1–1440)");
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Custom sleep timer")
+                .setMessage("Turn the strip off after how many minutes?")
+                .setView(input)
+                .setNegativeButton("CANCEL",null)
+                .setPositiveButton("SET",(d,w)->{
+                    try{
+                        long m=Long.parseLong(input.getText().toString().trim());
+                        if(m>=1 && m<=1440) startSleepTimer(m);
+                    }catch(Exception ignored){}
+                }).show();
+    }
+
     void startSleepTimer(long minutes) {
         sleepAt = System.currentTimeMillis() + minutes * 60000L;
         handler.postDelayed(() -> {
@@ -290,7 +307,7 @@ public class MainActivity extends Activity {
 
         final int[] PRESETS={Color.WHITE,Color.RED,Color.rgb(255,128,0),Color.YELLOW,
             Color.GREEN,Color.CYAN,Color.BLUE,Color.MAGENTA};
-        final String[] EFFECTS={"SOLID","SYMPHONY","RAINBOW STROBE","RAINBOW GRADIENT","COLORFUL ENERGY","COLORFUL JUMPS","RAINBOW FLOW","RAINBOW TRAIL","RAINBOW RUN"};
+        final String[] EFFECTS={"SOLID","AUTOMATIC LOOP","SYMPHONY","COLORFUL ENERGY","COLORFUL JUMPS","RAINBOW STROBE","YPB STROBE","RAINBOW GRADIENT","COLORFUL FLUTTERING","RGB FLUTTERING","YCP FLUTTERING","COLORFUL BRUSHING","RGB COLOR BRUSHING","YCP COLOR BRUSHING","COLOR BRUSH CLOSED PULL","RAINBOW OPEN / CLOSE","RGB OPEN / CLOSE","YCP OPEN / CLOSE","RED OPEN / CLOSE","GREEN OPEN / CLOSE","BLUE OPEN / CLOSE","YELLOW OPEN / CLOSE","CYAN OPEN / CLOSE","PURPLE OPEN / CLOSE","WHITE OPEN / CLOSE","RAINBOW LIGHT / DARK","RGB LIGHT / DARK","VGY LIGHT / DARK","RED LIGHT / DARK","GREEN LIGHT / DARK","BLUE LIGHT / DARK","CYAN LIGHT / DARK","YELLOW LIGHT / DARK","PURPLE LIGHT / DARK","WHITE LIGHT / DARK","RAINBOW FLOWING WATER","RGB RUNNING WATER","VY RUNNING WATER","RG RUNNING WATER","GB RUNNING WATER","YB RUNNING WATER","YC RUNNING WATER","GP RUNNING WATER","RAINBOW TRAILING","RED TRAILING","GREEN TRAILING","BLUE TRAILING","YELLOW TRAILING","CYAN TRAILING","PURPLE TRAILING","WHITE TRAILING","RED RUNNING","GREEN RUNNING","BLUE RUNNING","YELLOW RUNNING","CYAN RUNNING","PURPLE RUNNING","WHITE RUNNING","RAINBOW RUNNING","BGR RUNNING","PCY RUNNING","BPCY RUNNING","BGCY RUNNING"};
 
         MainView(Context c){
             super(c); den=getResources().getDisplayMetrics().density;
@@ -303,6 +320,13 @@ public class MainActivity extends Activity {
         void txt(Canvas c,String s,float x,float y,float sz,int col){
             p.setStyle(Paint.Style.FILL); p.setTypeface(Typeface.create("monospace",Typeface.NORMAL));
             p.setTextSize(dp(sz)); p.setColor(col); c.drawText(s,x,y,p);
+        }
+        void centerTxt(Canvas c,String s,float y,float sz,int col){
+            p.setStyle(Paint.Style.FILL);
+            p.setTypeface(Typeface.create("monospace",Typeface.NORMAL));
+            p.setTextSize(dp(sz));
+            p.setColor(col);
+            c.drawText(s,(getWidth()-p.measureText(s))/2f,y,p);
         }
 
         @Override protected void onDraw(Canvas c){
@@ -326,6 +350,7 @@ public class MainActivity extends Activity {
             p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE);
             c.drawCircle(w-side-dp(46),top-dp(5),dp(4),p);
             txt(c,"CONNECTED",w-side-dp(132),top,10,Color.GRAY);
+            drawSleepButton(c,w-side,top);
 
             drawWheel(c);
 
@@ -365,9 +390,8 @@ public class MainActivity extends Activity {
 
             p.setColor(Color.rgb(35,35,35)); p.setStrokeWidth(raw(1));
             c.drawLine(side,bottom+dp(12),w-side,bottom+dp(12),p);
-
-            if(sleepAt!=0) txt(c,"30M",w-side-dp(35),bottom+dp(30),9,Color.GRAY);
             if(effectsPanel)drawEffectsPanel(c,w,h,side);
+            if(sleepPanel)drawSleepPanel(c,w,h,side);
             c.restore();
         }
 
@@ -375,8 +399,8 @@ public class MainActivity extends Activity {
             float centerY=h/2f;
             String title=state.equals("CONNECTING")?"CONNECTING":"DISCONNECTED";
             String sub=state.equals("CONNECTING")?"SEARCHING FOR GATT—DEMO":"TAP TO CONNECT";
-            txt(c,title,w/2f-p.measureText(title)/2f,centerY,22,Color.WHITE);
-            txt(c,sub,w/2f-p.measureText(sub)/2f,centerY+dp(31),11,Color.GRAY);
+            centerTxt(c,title,centerY,22,Color.WHITE);
+            centerTxt(c,sub,centerY+dp(31),11,Color.GRAY);
             p.setStyle(Paint.Style.FILL);
             p.setColor(state.equals("CONNECTING")?Color.GRAY:Color.DKGRAY);
             c.drawCircle(w/2f,centerY-dp(45),dp(5),p);
@@ -396,29 +420,68 @@ public class MainActivity extends Activity {
             txt(c,"TAP UI TO CLOSE",left+dp(15),top+dp(82),9,Color.GRAY);
         }
 
+        void drawSleepButton(Canvas c,float x,float y){
+            p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(raw(1)); p.setColor(Color.rgb(80,80,80));
+            float bw=dp(58),bh=dp(30);
+            c.drawRoundRect(x-bw,y-bh/2,x,y+bh/2,dp(5),dp(5),p);
+            txt(c,"SLEEP",x-bw+dp(8),y+dp(4),9,Color.WHITE);
+        }
+
+        void drawSleepPanel(Canvas c,float w,float h,float side){
+            float pw=Math.min(dp(300),w-side*2),ph=dp(285);
+            float left=(w-pw)/2f, top=Math.max(dp(70),(h-ph)/2f);
+            p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(10,10,10));
+            c.drawRoundRect(left,top,left+pw,top+ph,dp(8),dp(8),p);
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(raw(1));p.setColor(Color.rgb(70,70,70));
+            c.drawRoundRect(left,top,left+pw,top+ph,dp(8),dp(8),p);
+            txt(c,"SLEEP TIMER",left+dp(16),top+dp(28),12,Color.WHITE);
+            txt(c,"TURN OFF AFTER",left+dp(16),top+dp(51),9,Color.GRAY);
+            int[] mins={15,30,60,120,240};
+            String[] labels={"15 MIN","30 MIN","1 HOUR","2 HOURS","4 HOURS"};
+            long now=System.currentTimeMillis();
+            long remaining=sleepAt>now?sleepAt-now:0;
+            for(int i=0;i<mins.length;i++){
+                float yy=top+dp(80)+i*dp(31);
+                boolean active=remaining>0 && Math.abs(remaining-mins[i]*60000L)<15000L;
+                p.setStyle(Paint.Style.STROKE);p.setColor(active?Color.WHITE:Color.rgb(65,65,65));
+                c.drawRoundRect(left+dp(16),yy-dp(11),left+pw-dp(16),yy+dp(11),dp(5),dp(5),p);
+                txt(c,labels[i],left+dp(27),yy+dp(4),10,Color.WHITE);
+            }
+            p.setColor(sleepAt>now?Color.WHITE:Color.GRAY);
+            txt(c,sleepAt>now?"TIMER ACTIVE":"CUSTOM TIME",left+dp(16),top+ph-dp(22),9,p.getColor());
+        }
+
         void drawEffectButton(Canvas c,float x,float y){
             p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(raw(1));p.setColor(Color.rgb(80,80,80));
             c.drawRoundRect(x,y-dp(17),x+dp(58),y+dp(17),dp(5),dp(5),p);
             txt(c,"EFFECT",x+dp(8),y+dp(5),9,Color.WHITE);
-            float sx=x+dp(82);
-            c.drawRoundRect(sx,y-dp(17),sx+dp(58),y+dp(17),dp(5),dp(5),p);
-            txt(c,"SLEEP",sx+dp(8),y+dp(5),9,Color.WHITE);
+
         }
 
         void drawEffectsPanel(Canvas c,float w,float h,float side){
-            float pw=Math.min(dp(310),w-side*2),ph=dp(315),left=side,top=Math.max(dp(90),h-ph-dp(65));
+            float pw=Math.min(dp(330),w-side*2), ph=Math.min(dp(500),h-dp(130));
+            float left=(w-pw)/2f, top=Math.max(dp(70),(h-ph)/2f);
             p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(10,10,10));
-            c.drawRoundRect(left,top,w-side,top+ph,dp(8),dp(8),p);
+            c.drawRoundRect(left,top,left+pw,top+ph,dp(8),dp(8),p);
             p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(raw(1));p.setColor(Color.rgb(70,70,70));
-            c.drawRoundRect(left,top,w-side,top+ph,dp(8),dp(8),p);
+            c.drawRoundRect(left,top,left+pw,top+ph,dp(8),dp(8),p);
+
             txt(c,"EFFECTS",left+dp(16),top+dp(28),12,Color.GRAY);
+            txt(c,"SWIPE",left+pw-dp(54),top+dp(28),8,Color.GRAY);
+
+            c.save();
+            c.clipRect(left,top+dp(42),left+pw,top+ph-dp(8));
+            float rowH=dp(27);
+            float y0=top+dp(64)-effectScroll;
             for(int i=0;i<EFFECTS.length;i++){
-                float yy=top+dp(58)+i*dp(27);
+                float yy=y0+i*rowH;
+                if(yy<top+dp(42)||yy>top+ph) continue;
                 p.setStyle(Paint.Style.FILL);
                 p.setColor(i==effect?Color.WHITE:Color.rgb(45,45,45));
                 c.drawCircle(left+dp(18),yy-dp(4),dp(4),p);
-                txt(c,EFFECTS[i],left+dp(32),yy,11,i==effect?Color.WHITE:Color.GRAY);
+                txt(c,EFFECTS[i],left+dp(32),yy,10,i==effect?Color.WHITE:Color.GRAY);
             }
+            c.restore();
         }
 
         void drawPresets(Canvas c,float y){
@@ -476,12 +539,33 @@ public class MainActivity extends Activity {
             float effectSpeedY=showTemperature ? sy+dp(188)+dp(28) : sy+dp(94)+dp(28);
 
             if(effectsPanel){
-                float pw=Math.min(dp(310),w-side*2),ph=dp(315),left=side,pt=Math.max(dp(90),h-ph-dp(65));
+                float pw=Math.min(dp(330),w-side*2), ph=Math.min(dp(500),h-dp(130));
+                float left=(w-pw)/2f, pt=Math.max(dp(70),(h-ph)/2f);
+                float rowH=dp(27);
+                float maxScroll=Math.max(0,EFFECTS.length*rowH-(ph-dp(62)));
+
+                if(e.getAction()==MotionEvent.ACTION_DOWN){
+                    effectTouchStartY=y;
+                    return true;
+                }
+                if(e.getAction()==MotionEvent.ACTION_MOVE){
+                    float dy=effectTouchStartY-y;
+                    if(Math.abs(dy)>dp(4)){
+                        effectScroll=Math.max(0,Math.min(maxScroll,effectScroll+dy));
+                        effectTouchStartY=y;
+                        invalidate();
+                    }
+                    return true;
+                }
                 if(e.getAction()==MotionEvent.ACTION_UP){
-                    if(x>=left&&x<=w-side&&y>=pt+dp(35)&&y<=pt+ph){
-                        int idx=Math.round((y-(pt+dp(58)))/dp(27));
-                        if(idx>=0&&idx<EFFECTS.length){setEffect(idx);effectsPanel=false;}
-                    } else effectsPanel=false;
+                    if(x<left||x>w-side||y<pt||y>pt+ph){effectsPanel=false;invalidate();return true;}
+                    if(Math.abs(y-effectTouchStartY)>dp(8)){return true;}
+                    if(y>=pt+dp(42)&&y<=pt+ph-dp(8)){
+                        int idx=Math.round((y-(pt+dp(64))+effectScroll)/rowH);
+                        if(idx>=0&&idx<EFFECTS.length){
+                            setEffect(idx); effectsPanel=false; effectScroll=0;
+                        }
+                    }
                     invalidate();return true;
                 }
                 return true;
@@ -515,8 +599,31 @@ public class MainActivity extends Activity {
 
                 float bottom=h-dp(32),fx=side,fy=bottom-dp(5);
                 if(x>=fx-dp(10)&&x<=fx+dp(70)&&Math.abs(y-fy)<dp(32)){effectsPanel=true;invalidate();return true;}
-                if(x>=fx+dp(82)&&x<=fx+dp(145)&&Math.abs(y-fy)<dp(32)){
-                    if(sleepAt==0) startSleepTimer(30); else cancelSleepTimer();
+
+
+                float sleepX=w-side, sleepY=top;
+                if(x>=sleepX-dp(64)&&x<=sleepX+dp(8)&&Math.abs(y-sleepY)<dp(28)){
+                    sleepPanel=true; invalidate(); return true;
+                }
+
+                if(sleepPanel){
+                    // handled below
+                }
+
+                if(sleepPanel){
+                    float pw=Math.min(dp(300),w-side*2), ph=dp(285);
+                    float left=(w-pw)/2f, pt=Math.max(dp(70),(h-ph)/2f);
+                    if(x<left||x>w-side||y<pt||y>pt+ph){
+                        sleepPanel=false;invalidate();return true;
+                    }
+                    if(y>=pt+dp(69)&&y<pt+dp(245)){
+                        int row=(int)((y-(pt+dp(69)))/dp(31));
+                        int[] mins={15,30,60,120,240};
+                        if(row>=0&&row<mins.length){startSleepTimer(mins[row]);sleepPanel=false;invalidate();return true;}
+                    }
+                    if(y>=pt+ph-dp(45)){
+                        showCustomSleepDialog();sleepPanel=false;invalidate();return true;
+                    }
                     return true;
                 }
 
