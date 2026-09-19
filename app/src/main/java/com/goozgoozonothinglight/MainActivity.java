@@ -32,7 +32,7 @@ public class MainActivity extends Activity {
     int effectSpeed = 55;
     long sleepAt = 0;
     int[] favoriteColors = {Color.RED, Color.GREEN, Color.BLUE, Color.WHITE};
-    final int[] EFFECT_CODES = {7, 10, 3, 4, 55, 76, 91};
+    final int[] EFFECT_CODES = {2, 7, 10, 3, 4, 55, 76, 91};
 
     android.content.SharedPreferences prefs;
 
@@ -261,6 +261,12 @@ public class MainActivity extends Activity {
         view.invalidate();
     }
 
+    boolean isWhiteColor() {
+        float[] hsv=new float[3];
+        Color.colorToHSV(rgb,hsv);
+        return hsv[1] <= 0.10f && hsv[2] >= 0.75f;
+    }
+
     void setTemperature(int k) {
         colorTemperature = Math.max(2000, Math.min(6500, k));
         prefs.edit().putInt("colorTemperature", colorTemperature).apply();
@@ -284,14 +290,14 @@ public class MainActivity extends Activity {
 
         final int[] PRESETS={Color.WHITE,Color.RED,Color.rgb(255,128,0),Color.YELLOW,
             Color.GREEN,Color.CYAN,Color.BLUE,Color.MAGENTA};
-        final String[] EFFECTS={"SOLID","RAINBOW STROBE","RAINBOW GRADIENT","COLORFUL ENERGY","COLORFUL JUMPS","RAINBOW FLOW","RAINBOW TRAIL","RAINBOW RUN"};
+        final String[] EFFECTS={"SOLID","SYMPHONY","RAINBOW STROBE","RAINBOW GRADIENT","COLORFUL ENERGY","COLORFUL JUMPS","RAINBOW FLOW","RAINBOW TRAIL","RAINBOW RUN"};
 
         MainView(Context c){
             super(c); den=getResources().getDisplayMetrics().density;
             setBackgroundColor(Color.BLACK);
             p.setStrokeCap(Paint.Cap.ROUND); p.setStrokeJoin(Paint.Join.ROUND);
         }
-        float dp(float x){return x*den*uiScale;}
+        float dp(float x){return x*den*0.90f;}
         float raw(float x){return x*den;}
 
         void txt(Canvas c,String s,float x,float y,float sz,int col){
@@ -309,7 +315,6 @@ public class MainActivity extends Activity {
             // Before connection: deliberately minimal, centered state screen.
             if(!state.equals("CONNECTED")){
                 drawConnectionState(c,w,h,side,top);
-                drawSizeButton(c,w-side,top-dp(3));
                 c.restore(); return;
             }
 
@@ -318,7 +323,6 @@ public class MainActivity extends Activity {
 
             txt(c,"NOTHING LIGHT",side,top,20,Color.WHITE);
             txt(c,"GATT—DEMO",side,top+dp(30),12,Color.GRAY);
-            drawSizeButton(c,w-side,top-dp(3));
             p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE);
             c.drawCircle(w-side-dp(46),top-dp(5),dp(4),p);
             txt(c,"CONNECTED",w-side-dp(132),top,10,Color.GRAY);
@@ -338,12 +342,17 @@ public class MainActivity extends Activity {
             drawSlider(c,side,sliderY,w-side,brightness/100f);
             txt(c,brightness+"%",side,sy+dp(63),15,Color.WHITE);
 
+            boolean showTemperature = isWhiteColor();
             float ty=sy+dp(94);
-            txt(c,"TEMPERATURE",side,ty,12,Color.GRAY);
-            drawSlider(c,side,ty+dp(28),w-side,(colorTemperature-2000)/4500f);
-            txt(c,colorTemperature+"K",side,ty+dp(63),15,Color.WHITE);
-
-            float ey=ty+dp(94);
+            float ey;
+            if (showTemperature) {
+                txt(c,"TEMPERATURE",side,ty,12,Color.GRAY);
+                drawSlider(c,side,ty+dp(28),w-side,(colorTemperature-2000)/4500f);
+                txt(c,colorTemperature+"K",side,ty+dp(63),15,Color.WHITE);
+                ey=ty+dp(94);
+            } else {
+                ey=ty;
+            }
             txt(c,"EFFECT SPEED",side,ey,12,Color.GRAY);
             drawSlider(c,side,ey+dp(28),w-side,(effectSpeed-1)/99f);
             txt(c,effectSpeed+"%",side,ey+dp(63),15,Color.WHITE);
@@ -358,7 +367,6 @@ public class MainActivity extends Activity {
             c.drawLine(side,bottom+dp(12),w-side,bottom+dp(12),p);
 
             if(sleepAt!=0) txt(c,"30M",w-side-dp(35),bottom+dp(30),9,Color.GRAY);
-            if(sizePanel)drawSizePanel(c,w,h,side);
             if(effectsPanel)drawEffectsPanel(c,w,h,side);
             c.restore();
         }
@@ -373,13 +381,6 @@ public class MainActivity extends Activity {
             p.setColor(state.equals("CONNECTING")?Color.GRAY:Color.DKGRAY);
             c.drawCircle(w/2f,centerY-dp(45),dp(5),p);
         }
-
-        void drawSizeButton(Canvas c,float x,float y){
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(raw(1.5f));p.setColor(Color.WHITE);
-            c.drawRoundRect(x-dp(17),y-dp(15),x+dp(17),y+dp(15),dp(4),dp(4),p);
-            txt(c,"UI",x-dp(9),y+dp(6),10,Color.WHITE);
-        }
-
         void drawSizePanel(Canvas c,float w,float h,float side){
             float pw=Math.min(dp(270),w-side*2),ph=dp(100),left=w-side-pw,top=dp(82);
             p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(10,10,10));
@@ -405,7 +406,7 @@ public class MainActivity extends Activity {
         }
 
         void drawEffectsPanel(Canvas c,float w,float h,float side){
-            float pw=Math.min(dp(310),w-side*2),ph=dp(285),left=side,top=Math.max(dp(90),h-ph-dp(65));
+            float pw=Math.min(dp(310),w-side*2),ph=dp(315),left=side,top=Math.max(dp(90),h-ph-dp(65));
             p.setStyle(Paint.Style.FILL);p.setColor(Color.rgb(10,10,10));
             c.drawRoundRect(left,top,w-side,top+ph,dp(8),dp(8),p);
             p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(raw(1));p.setColor(Color.rgb(70,70,70));
@@ -470,23 +471,12 @@ public class MainActivity extends Activity {
 
             cx=w/2f;cy=top+dp(190);radius=Math.min(dp(126),(w-side*2)*.38f);
             float presetY=cy+radius+dp(32),labelY=presetY+dp(45),sy=labelY+dp(72),sliderY=sy+dp(28);
+            boolean showTemperature = isWhiteColor();
             float tempY=sy+dp(94)+dp(28);
-            float effectSpeedY=sy+dp(188)+dp(28);
-
-            if(sizePanel){
-                float pw=Math.min(dp(270),w-side*2),left=w-side-pw,pt=dp(82);
-                float mx=left+pw-dp(68),px=left+pw-dp(24),by=pt+dp(50);
-                if(e.getAction()==MotionEvent.ACTION_UP){
-                    if(Math.hypot(x-mx,y-by)<dp(28)){setUiScale(uiScale-.05f);return true;}
-                    if(Math.hypot(x-px,y-by)<dp(28)){setUiScale(uiScale+.05f);return true;}
-                    if(!(x>=left&&x<=w-side&&y>=pt&&y<=pt+dp(100)))sizePanel=false;
-                    invalidate();return true;
-                }
-                return true;
-            }
+            float effectSpeedY=showTemperature ? sy+dp(188)+dp(28) : sy+dp(94)+dp(28);
 
             if(effectsPanel){
-                float pw=Math.min(dp(310),w-side*2),ph=dp(285),left=side,pt=Math.max(dp(90),h-ph-dp(65));
+                float pw=Math.min(dp(310),w-side*2),ph=dp(315),left=side,pt=Math.max(dp(90),h-ph-dp(65));
                 if(e.getAction()==MotionEvent.ACTION_UP){
                     if(x>=left&&x<=w-side&&y>=pt+dp(35)&&y<=pt+ph){
                         int idx=Math.round((y-(pt+dp(58)))/dp(27));
@@ -507,7 +497,7 @@ public class MainActivity extends Activity {
                     float f=Math.max(0,Math.min(1,(x-side)/(w-side*2)));
                     brightness=Math.max(1,Math.min(100,Math.round(f*100)));setBrightness(brightness);invalidate();return true;
                 }
-                if(Math.abs(y-tempY)<dp(38)&&x>=side-dp(10)&&x<=w-side+dp(10)){
+                if(showTemperature && Math.abs(y-tempY)<dp(38)&&x>=side-dp(10)&&x<=w-side+dp(10)){
                     float f=Math.max(0,Math.min(1,(x-side)/(w-side*2)));
                     setTemperature(Math.round(2000+4500*f));return true;
                 }
@@ -522,8 +512,6 @@ public class MainActivity extends Activity {
             }
 
             if(e.getAction()==MotionEvent.ACTION_UP){
-                float uiX=w-side,uiY=top-dp(3);
-                if(Math.hypot(x-uiX,y-uiY)<dp(28)){sizePanel=true;invalidate();return true;}
 
                 float bottom=h-dp(32),fx=side,fy=bottom-dp(5);
                 if(x>=fx-dp(10)&&x<=fx+dp(70)&&Math.abs(y-fy)<dp(32)){effectsPanel=true;invalidate();return true;}
