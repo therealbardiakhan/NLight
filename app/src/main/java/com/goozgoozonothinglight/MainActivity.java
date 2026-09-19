@@ -30,6 +30,9 @@ public class MainActivity extends Activity {
     int effect = 0;
     int colorTemperature = 4000;
     int effectSpeed = 55;
+    long lastSliderSend=0;
+    int pendingBrightness=-1;
+    int pendingSpeed=-1;
     long sleepAt = 0;
     int[] favoriteColors = {Color.RED, Color.GREEN, Color.BLUE, Color.WHITE};
     final int[] EFFECT_CODES = {1,2,3,4,7,9,10,26,27,28,29,30,31,32,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95};
@@ -210,7 +213,18 @@ public class MainActivity extends Activity {
 
     void setPower(boolean on){ powered=on; send(powerFrame(on)); view.invalidate(); }
     void setColor(int c){ rgb=c; powered=true; send(powerFrame(true)); handler.postDelayed(()->send(colorFrame(c)),50); view.invalidate(); }
-    void setBrightness(int b){ brightness=b; prefs.edit().putInt("brightness",b).apply(); send(brightnessFrame(b)); view.invalidate(); }
+    void setBrightness(int b){
+        brightness=Math.max(1,Math.min(100,b));
+        prefs.edit().putInt("brightness",brightness).apply();
+        pendingBrightness=brightness;
+        long now=System.currentTimeMillis();
+        if(now-lastSliderSend>=80){
+            send(brightnessFrame(brightness));
+            lastSliderSend=now;
+            pendingBrightness=-1;
+        }
+        view.invalidate();
+    }
     void setEffect(int e) {
         effect = Math.max(0, Math.min(EFFECT_CODES.length, e));
         prefs.edit().putInt("effect", effect).apply();
@@ -226,12 +240,28 @@ public class MainActivity extends Activity {
     }
 
     void setEffectSpeed(int speed) {
-        effectSpeed = Math.max(1, Math.min(100, speed));
-        prefs.edit().putInt("effectSpeed", effectSpeed).apply();
-        if (effect > 0) {
+        effectSpeed=Math.max(1,Math.min(100,speed));
+        prefs.edit().putInt("effectSpeed",effectSpeed).apply();
+        pendingSpeed=effectSpeed;
+        long now=System.currentTimeMillis();
+        if(effect>0 && now-lastSliderSend>=80){
             send(effectSpeedFrame(effectSpeed));
+            lastSliderSend=now;
+            pendingSpeed=-1;
         }
         view.invalidate();
+    }
+
+    void flushSliderPackets(){
+        if(pendingBrightness>0){
+            send(brightnessFrame(pendingBrightness));
+            pendingBrightness=-1;
+        }
+        if(effect>0 && pendingSpeed>0){
+            send(effectSpeedFrame(pendingSpeed));
+            pendingSpeed=-1;
+        }
+        lastSliderSend=System.currentTimeMillis();
     }
 
     void saveState() {
@@ -341,9 +371,7 @@ public class MainActivity extends Activity {
 
             txt(c,"NOTHING LIGHT",side,top,20,Color.WHITE);
             txt(c,"GATT—DEMO",side,top+dp(30),12,Color.GRAY);
-            p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE);
-            c.drawCircle(w-side-dp(46),top-dp(5),dp(4),p);
-            txt(c,"CONNECTED",w-side-dp(132),top,10,Color.GRAY);
+            centerTxt(c,"CONNECTED",top,10,Color.GRAY);
             drawSleepButton(c,w-side,top);
 
             drawWheel(c);
@@ -372,9 +400,11 @@ public class MainActivity extends Activity {
             } else {
                 ey=ty;
             }
+            if(effect>0){
             txt(c,"EFFECT SPEED",side,ey,12,Color.GRAY);
             drawSlider(c,side,ey+dp(28),w-side,(effectSpeed-1)/99f);
             txt(c,effectSpeed+"%",side,ey+dp(63),15,Color.WHITE);
+            }
 
             float bottom=h-dp(32);
             drawEffectButton(c,side,bottom-dp(5));
@@ -503,6 +533,7 @@ public class MainActivity extends Activity {
         }
 
         @Override public boolean onTouchEvent(MotionEvent e){
+            if(e.getAction()==MotionEvent.ACTION_UP) flushSliderPackets();
             float x=e.getX(),y=e.getY()-insetTop,w=getWidth(),h=getHeight()-insetTop-insetBottom;
             float side=Math.max(dp(24),w*.065f),top=dp(48);
 

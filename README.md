@@ -1,13 +1,9 @@
-# Nothing Light v1.9.1
+# Nothing Light v2.0
 
-Bug-fix build from v1.9.
+Performance/UI update from the working v1.9.1 build.
 
-The v1.9 build failed because stale UI-scale code remained after the UI-scale control was removed. That obsolete code is completely removed here.
-
-Retained:
-- centered connection screen
-- fixed 90% UI scale
-- top-right custom sleep timer
-- large scrollable MR Star effect list
-- Symphony and documented effects
-- existing BLE implementation unchanged
+- Connection indicator is now top-center, leaving the top-right SLEEP button clear.
+- Effect Speed is hidden when Solid is selected and appears only for active effects.
+- Brightness and effect-speed BLE writes are throttled to about 80 ms while dragging.
+- The final slider value is sent when the user releases the slider.
+- Existing BLE protocol, effects, color picker, temperature control, sleep timer, and UI remain unchanged.
